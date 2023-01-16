@@ -33,6 +33,29 @@ CFLAGS += -Wall -Werror -std=c99 $(shell pkg-config --cflags $(PACKAGES))
 # Keep this until we have Glib 2.68 in third-party module
 CFLAGS += -Wno-deprecated-declarations
 
+# XXX: Support to build binaries relro/pie/bind_now. For more,
+#      please refer to:
+#          https://github.com/restraint-harness/restraint/issues/255
+CFLAGS_x86_64 =
+CFLAGS_aarch64 =
+CFLAGS_ppc64le =
+
+CFLAGS_x86_64 += -fshort-enums
+CFLAGS_x86_64 += -fcf-protection=full
+#CFLAGS_x86_64 += -fplugin=annobin
+CFLAGS_x86_64 += -fstack-protector-strong
+CFLAGS_x86_64 += -D_FORTIFY_SOURCE=2
+CFLAGS_x86_64 += -D_GLIBCXX_ASSERTIONS
+
+CFLAGS += $(CFLAGS_$(shell uname -i))
+# XXX: Note that centos-stream-8-x86_64 doesn't support -fplugin=annobin
+#      It looks we just need to minimize the CFLAGS and LDFLAGS
+#      > CFLAGS += -fpie
+#      > LDFLAGS += -Wl,-z,now -pie
+CFLAGS += -fpie
+LDFLAGS += -Wl,-z,now
+LDFLAGS += -pie
+
 ifeq ($(STATIC), 1)
     # The LIBS list must start with static then followed with dynamic.
     # DYNAMICLIBS must be stripped out of THIRDPTYLIBS leaving
