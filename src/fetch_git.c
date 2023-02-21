@@ -30,7 +30,7 @@
 #include "fetch.h"
 #include "fetch_git.h"
 
-static const gchar *g_git_branches[] = {GIT_BRANCHES};
+static const gchar *git_branches[] = {GIT_BRANCHES};
 
 static gint
 packet_length(const gchar *linelen)
@@ -188,7 +188,7 @@ myread(struct archive *a, void *client_data, const void **abuf)
 }
 
 static gboolean
-myopen(FetchData *fetch_data, GError **error)
+myopen(FetchData *fetch_data, gchar *default_branch, GError **error)
 {
     g_return_val_if_fail(fetch_data != NULL, FALSE);
     g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
@@ -233,15 +233,10 @@ myopen(FetchData *fetch_data, GError **error)
         goto error;
     }
 
-    // traverse git branches one by one
-    for (gint i = 0; i < sizeof (g_git_branches) / sizeof (const gchar *); i++) {
-        gchar *branch = (gchar *)(g_git_branches[i]);
-        write_succeeded = packet_write(fetch_data->ostream, &tmp_error, "argument %s:%s\0",
-                               fetch_data->url->query == NULL ? branch: fetch_data->url->query,
-                               fetch_data->url->fragment == NULL ? "" : fetch_data->url->fragment + fragment_offset);
-        if (write_succeeded)
-            break;
-    }
+    printf("XXX: %s\n", default_branch);
+    write_succeeded = packet_write(fetch_data->ostream, &tmp_error, "argument %s:%s\0",
+            fetch_data->url->query == NULL ? default_branch: fetch_data->url->query,
+            fetch_data->url->fragment == NULL ? "" : fetch_data->url->fragment + fragment_offset);
     if (!write_succeeded) {
         g_propagate_prefixed_error(error, tmp_error,
                 "While writing to %s: ", fetch_data->url->host);
@@ -462,13 +457,25 @@ restraint_fetch_git (SoupURI *url,
     }
     archive_read_support_filter_all(fetch_data->a);
     archive_read_support_format_all(fetch_data->a);
-    gboolean open_succeeded = myopen(fetch_data, &tmp_error);
-    if (!open_succeeded) {
-        g_propagate_error(&fetch_data->error, tmp_error);
-        g_idle_add (archive_finish_callback, fetch_data);
-        return;
+
+    // traverse git branches one by one
+    r = ARCHIVE_FATAL;
+    for (gint i = 0; i < sizeof (git_branches) / sizeof (const gchar *); i++) {
+        gchar *default_branch = (gchar *)(git_branches[i]);
+        gboolean open_succeeded = myopen(fetch_data, default_branch, &tmp_error);
+        if (!open_succeeded) {
+            g_propagate_error(&fetch_data->error, tmp_error);
+            g_idle_add (archive_finish_callback, fetch_data);
+            return;
+        }
+	printf("DO\n");
+        r = archive_read_open(fetch_data->a, fetch_data, NULL, myread, myclose);
+	printf("RET of archive_read_open: %d\n", r);
+        if (r == ARCHIVE_OK) {
+            printf("XXX: Bingo! got the default branch: %s\n", default_branch);
+            break;
+        }
     }
-    r = archive_read_open(fetch_data->a, fetch_data, NULL, myread, myclose);
     if (r != ARCHIVE_OK) {
         g_set_error(&fetch_data->error, RESTRAINT_FETCH_LIBARCHIVE_ERROR, r,
                 "archive_read_open failed: %s", archive_error_string(fetch_data->a));
